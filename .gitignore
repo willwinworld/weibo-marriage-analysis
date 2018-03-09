@@ -100,4 +100,3 @@ web/upload/*
 *.png
 
 # login
-login.py
