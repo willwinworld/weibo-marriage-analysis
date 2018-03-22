@@ -5,19 +5,21 @@ import time
 import requests
 from pyquery import PyQuery as Pq
 from pymongo import MongoClient
-from peewee import IntegrityError
 from dialogue.dumblog import dlog
 from headers import headers, cookies
 from proxy import Proxy
+from haipproxy.client.py_cli import ProxyFetcher
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-
+# https://weibo.com/5861369000/FlCRqC4wl?filter=hot&root_comment_id=0&type=comment#_rnd1520924660779
 
 logger = dlog(__name__, console='debug')
 
 
 CLIENT = MongoClient('localhost', 27017)
 DB = CLIENT['weibo_marriage']
+args = dict(host='127.0.0.1', port=6379, password='', db=0)
+fetcher = ProxyFetcher('weibo', strategy='greedy', length=5, redis_args=args)
 
 
 class CommentResp(object):
@@ -34,7 +36,7 @@ class CommentResp(object):
     @staticmethod
     def save(resp_res):
         collection = DB['comment_response']
-        collection.insert(resp_res)
+        collection.insert_one(resp_res)
 
     def send_request(self):
         page_one_url = self.base_url.format(self.id, self.max_id, 1, self.rnd)
@@ -94,20 +96,51 @@ class AddUserName(object):
     """
     由于评论数据缺乏稳定的用户名选择器，要去用户主页去爬取用户名，增加至mongodb中
     """
+    comment_without_username = DB['comment_without_username']
+    comment_with_username = DB['comment_with_username']
 
-
+    def add_username(self):
+        for record in self.comment_without_username.find():
+            user_id = record['user_id']
+            user_page_url = 'https://weibo.com/u/' + user_id
+            logger.info(user_page_url)
+            proxies = {"http": "{}".format(fetcher.get_proxy())}
+            logger.info(proxies)
+            r = requests.get(user_page_url, verify=False, headers=headers, cookies=cookies, proxies=proxies)
+            r.encoding = 'utf8'  # 解决异常编码
+            d = Pq(r.text)
+            # print(r.text)
+            user_name = d('title').text().replace('的微博_微博', '')
+            logger.info(user_name)
+            # result = {'comment_id': record['comment_id'], 'user_id': record['user_id'],
+            #           'comment_content': record['comment_content'], 'comment_time': record['comment_time'],
+            #           'up_vote_num': record['up_vote_num'], 'user_name': user_name}
+            # comment_with_username = DB['comment_with_username']
+            # comment_with_username.insert_one(result)
+            # break
 
 
 if __name__ == '__main__':
-    comment_parser = CommentParser()
-    comment_parser.parse_resp()
+    comment_resp = CommentResp()
+    comment_resp.send_request()
+
+    # add_user_name = AddUserName()
+    # add_user_name.add_username()
+    # fetcher.get_proxy()
+"""
+comment_response: 原始响应
+comment_without_username: 没有用户名的
+comment_with_username: 有用户名的
+"""
+
+
 #     comment_resp = CommentResp()
 #     comment_resp.send_request()
 #     client = MongoClient('localhost', 27017)
 #     db = client['weibo_marriage']
 #     collection = db['comment_response']
 #     # res = collection.find_one({'code': '100000'})
-#     res = collection.find_one({"data.page.pagenum": 1})
+#     res = collection.find_one({"data.page.pagenum": 1})  # mongodb多层结构嵌套查询
 #     print(res)
 
 

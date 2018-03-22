@@ -100,3 +100,10 @@ web/upload/*
 *.png
 
 # login
+login.py
+
+# cookie
+cookie.json
+
+# captcha.jpeg
+captcha.jpeg
