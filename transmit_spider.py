@@ -6,7 +6,6 @@ import time
 import requests
 import redis
 import functools
-from random import uniform
 from pyquery import PyQuery as Pq
 from pymongo import MongoClient
 from dialogue.dumblog import dlog
@@ -117,51 +116,6 @@ class CommentParser(object):
             # break
 
 
-# class RedisQueue(object):
-#     def __init__(self, name, namespace='queue', conn=None, **redis_kwargs):
-#         """The default connection parameters are: host='localhost', port=6379, db=0"""
-#         self.__db = conn or redis.Redis(**redis_kwargs)
-#         self.key = '%s:%s' % (namespace, name)
-#
-#     def qsize(self):
-#         return self.__db.llen(self.key)
-#
-#     def empty(self):
-#         return self.qsize() == 0
-#
-#     def left_put(self, item):
-#         self.__db.lpush(self.key, json.dumps(item))
-#
-#     def right_put(self, item):
-#         self.__db.rpush(self.key, json.dumps(item))
-#
-#     def left_get(self, block=True, timeout=1):
-#         if block:
-#             item = self.__db.blpop(self.key, timeout=timeout)
-#         else:
-#             item = self.__db.lpop(self.key)
-#
-#         if item:
-#             item = item[1]
-#         return json.loads(item)
-#
-#     def right_get(self, block=True, timeout=1):
-#         if block:
-#             item = self.__db.brpop(self.key, timeout=timeout)
-#         else:
-#             item = self.__db.rpop(self.key)
-#
-#         if item:
-#             item = item[1]
-#         return json.loads(item)
-#
-#     def left_get_nowait(self):
-#         return self.left_get(False)
-#
-#     def right_get_nowait(self):
-#         return self.right_get(False)
-
-
 class RedisQueue(object):
     def __init__(self, name, namespace='queue', conn=None, **redis_kwargs):
         """The default connection parameters are: host='localhost', port=6379, db=0"""
@@ -244,25 +198,17 @@ class CommentRecursive(object):
         """
         transmit_url = self.base_url.format(father_mid, page_num, self.rnd)
         logger.info(transmit_url)
-        # proxies = Proxy.weibo_get_proxy()
-        # if proxies == 0:
-        #     r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies)
-        #     time.sleep(uniform(2, 6))
-        # else:
-        #     logger.info(proxies)
-        #     r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies, proxies=proxies)
         r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies)
         r.encoding = 'utf8'
         resp_res = json.loads(r.text)
         return resp_res
 
-    def parser(self, father_mid, resp_res):
+    def parser(self, father_mid, resp_res, path=None):
         """
         转发信息解析模块
         :return:
         """
         html = resp_res['data']['html']
-        # logger.info(html)
         current_page = int(resp_res['data']['page']['pagenum'])
         dollar = Pq(html)
         block = dollar('.list_li.S_line1.clearfix')
@@ -303,15 +249,19 @@ class CommentRecursive(object):
             if len(like_list) != 0:
                 like_num = like_list[0]
             logger.info(like_num)
+            if path:
+                propagate_path = path + mid + "->"
+            else:
+                propagate_path = "{}".format(father_mid) + "->" + "{}".format(mid) + "->"
             single_result = {'mid': int(mid), 'user_id': int(user_id), 'user_name': user_name, 'comment': comment,
-                      'comment_time': comment_time, 'relay_num': int(relay_num), 'like_num': int(like_num),
-                      'comment_img_src': comment_img_src, 'current_page': int(current_page),
-                      'transmit_url': transmit_url, 'father_mid': int(father_mid),
-                      'path': "{}".format(father_mid) + '->' + "{}".format(mid) + '->'}
+                             'comment_time': comment_time, 'relay_num': int(relay_num), 'like_num': int(like_num),
+                             'comment_img_src': comment_img_src, 'current_page': int(current_page),
+                             'transmit_url': transmit_url, 'father_mid': int(father_mid),
+                             'path': propagate_path}
             result.append(single_result)
         return result
 
-    def gather(self, father_mid):
+    def gather(self, father_mid, path=None):
         """
         合并模块，第一页和剩余页面的内容
         方便后续递归操作
@@ -319,14 +269,13 @@ class CommentRecursive(object):
         """
         total_result = []
         resp_page_one = self.requester(father_mid, 1)  # 第一页的原始内容
-        result_page_one = self.parser(father_mid, resp_page_one)  # 第一页的解析内容
-        # total_result.insert(0, result_page_one)
+        result_page_one = self.parser(father_mid, resp_page_one, path=path)  # 第一页的解析内容
         total_result.extend(result_page_one)
         total_page = int(resp_page_one['data']['page']['totalpage'])
         if total_page > 1:
             for index in range(2, total_page+1):
                 rest_resp_res = self.requester(father_mid, index)
-                result_page_rest = self.parser(father_mid, rest_resp_res)
+                result_page_rest = self.parser(father_mid, rest_resp_res, path=path)
                 total_result.extend(result_page_rest)
         logger.info(total_result)
         return total_result
@@ -337,46 +286,31 @@ class CommentRecursive(object):
         collection.insert_one(resp_res)
         logger.info('saving')
 
-    # def test_find(self):
-    #     """
-    #     测试转发抓取
-    #     测试id: ObjectId("5aa8f8310e948e277c56cd09")
-    #     测试mid: 4153419340041267
-    #     根评论转发数: 11
-    #     :return:
-    #     """
-    #     collection = DB['transmit_comment']
-    #     test_root_res = collection.find_one({"mid": "4153419340041267"})  # 根结点评论
-    #     logger.info(test_root_res)
-    #     test_relay_num = int(test_root_res['relay_num'])  # 转发数，没有转发是0
-    #     if test_relay_num >= 1:
-    #         mid = test_root_res['mid']
-    #         total_result = self.gather(father_mid=mid)
-    #         for element in total_result:
-    #             element_relay_num = element['relay_num']
-                # if element_relay_num >= 1:
-
     def root_insert(self):
         """
         寻找根评论中有转发的数据，并放到redis队列中，叫root, 里面全是有转发的字典
         :return:
         """
-        collection = DB['transmit_comment']
-        test_root_res = collection.find_one({"mid": "4153419340041267"})
-        logger.info(test_root_res)
-        root = RedisQueue('root', host='127.0.0.1', port='6379', password='', db=1)
-        root.put({'mid': test_root_res['mid'], 'user_id': test_root_res['user_id'], 'user_name': test_root_res['user_name'],
-                  'comment': test_root_res['comment'], 'comment_time': test_root_res['comment_time'], 'relay_num': test_root_res['relay_num'],
-                  'like_num': test_root_res['like_num'], 'comment_img_src': test_root_res['comment_img_src'], 'current_page': test_root_res['current_page'],
-                  'transmit_url': test_root_res['transmit_url']})
         # collection = DB['transmit_comment']
-        # transmit_res = collection.find({'relay_num': {'$gt': '0'}})
-        # for i in transmit_res:
-        #     root.put({'mid': i['mid'], 'user_id': i['user_id'], 'user_name': i['user_name'], 'comment': i['comment'],
-        #               'comment_time': i['comment_time'], 'relay_num': i['relay_num'], 'like_num': i['like_num'],
-        #               'comment_img_src': i['comment_img_src'], 'current_page': i['current_page'],
-        #               'transmit_url': i['transmit_url']})
-        #     break
+        # test_root_res = collection.find_one({"mid": "4153419340041267"})  # 11个人转发的
+        # test_root_res = collection.find_one({"mid": "4152039828718852"})  # 700多个人转发的
+        # logger.info(test_root_res)
+        # root = RedisQueue('root', host='127.0.0.1', port='6379', password='', db=1)
+        # root.put({'mid': test_root_res['mid'], 'user_id': test_root_res['user_id'], 'user_name': test_root_res['user_name'],
+        #           'comment': test_root_res['comment'], 'comment_time': test_root_res['comment_time'], 'relay_num': test_root_res['relay_num'],
+        #           'like_num': test_root_res['like_num'], 'comment_img_src': test_root_res['comment_img_src'], 'current_page': test_root_res['current_page'],
+        #           'transmit_url': test_root_res['transmit_url']})
+
+        collection = DB['transmit_comment']
+        root = RedisQueue('root', host='127.0.0.1', port='6379', password='', db=1)
+        transmit_res = collection.find({'relay_num': {'$gt': '0'}})
+        for i in transmit_res:
+            logger.info(i)
+            root.put({'mid': i['mid'], 'user_id': i['user_id'], 'user_name': i['user_name'], 'comment': i['comment'],
+                      'comment_time': i['comment_time'], 'relay_num': i['relay_num'], 'like_num': i['like_num'],
+                      'comment_img_src': i['comment_img_src'], 'current_page': i['current_page'],
+                      'transmit_url': i['transmit_url']})
+            # break
 
     @pipe('root')
     def res_insert(self, param):
@@ -387,79 +321,28 @@ class CommentRecursive(object):
         :return:
         """
         root = RedisQueue('root', host='127.0.0.1', port='6379', password='', db=1)
-        test = DB['test']
+        derivative = DB['transmit_comment_derivative']
         father_mid = param['mid']  # 从root队列里拿的元素肯定都是有转发的
-        derive_result = self.gather(father_mid)  # 从有转发的产生出的结果
+        if 'path' in param:  # 如果是已经转发过一次的，应该有path, 要在原来的path基础上来继续增加
+            logger.info(param['path'])
+            derive_result = self.gather(father_mid, path=param['path'])  # 从有转发的产生出的结果
+        else:
+            derive_result = self.gather(father_mid)  # 从有转发的产生出的结果
         for element in derive_result:
-            test.insert(element)
+            derivative.insert(element)  # 衍生出来的评论全部要放到数据库中
             element_relay_num = int(element['relay_num'])
             if element_relay_num != 0:
-                # root.put(element)
                 root.put(
-                    {'mid': element['mid'], 'user_id': element['user_id'], 'user_name': element['user_name'], 'comment': element['comment'],
-                               'comment_time': element['comment_time'], 'relay_num': element['relay_num'], 'like_num': element['like_num'],
-                               'comment_img_src': element['comment_img_src'], 'current_page': element['current_page'],
-                               'transmit_url': element['transmit_url']})
-                break
-            # if element_relay_num == 0:
-            #     # 解析出来结果没有转发了，直接放到mongodb中
-            #     test.insert(element)
-            # else:
-            #     # 解析出来的结果还是有转发，又扔回到root队列中
-            #     root.put(element)
+                    {'mid': element['mid'], 'user_id': element['user_id'],
+                     'user_name': element['user_name'], 'comment': element['comment'],
+                     'comment_time': element['comment_time'], 'relay_num': element['relay_num'],
+                     'like_num': element['like_num'], 'comment_img_src': element['comment_img_src'],
+                     'current_page': element['current_page'], 'transmit_url': element['transmit_url'],
+                     'father_mid': element['father_mid'], 'path': element['path']})
 
 
 if __name__ == '__main__':
-    # from proxy import Proxy
-    #
-    # proxies = Proxy.get_proxy()
-    # print(proxies)
-
     comment_recursive = CommentRecursive()
     comment_recursive.root_insert()
     comment_recursive.res_insert()
-    # test = DB['test']
-    # test_data = {'test': '1'}
-    # test.insert(test_data)
-    # print(fetcher.get_proxies())
-    # import random
-    # print(random.choice(fetcher.get_proxies()))
-    # proxies = {"http": "{}".format(fetcher.get_proxy())}
-    # print(proxies)
-    # test_url = 'http://weibo.com/aj/v6/mblog/info/big?ajwvr=6&id=4151542729073845&max_id=4207260944678477&page=1&__rnd=1520929138466'
-    # r = requests.get(test_url, verify=False, cookies=cookies, proxies=proxies)
-    # print(r.status_code)
-
-    # root = RedisQueue('root', host='127.0.0.1', port='6379', password='', db=1)
-    # root.right_put({'test': 1})
-
-
-    # collection = DB['transmit_comment']
-    # res = collection.find({'relay_num': {'$gt': '0'}})
-    # for i in res:
-    #     print(i)
-    #     print(type(i))
-    #     break
-    # comment_recursive = CommentRecursive()
-    # comment_recursive.test_find()
-
-    # comment_parser = CommentParser()
-    # comment_parser.parse_resp()
-
-
-    # proxies = {"http": "{}".format('http://113.200.56.13:8010')}
-    # r = requests.get('http://weibo.com/aj/v6/mblog/info/big?ajwvr=6&id=4151542729073845&max_id=4207260944678477&page=1&__rnd=1520929138466', verify=False, cookies=cookies, proxies=proxies)
-    # print(r.text)
-    # comment_transmit = CommentTransmit()
-    # comment_transmit.send_request()
-    # proxies = fetcher.get_proxy()
-    # logger.info(proxies)
-    # r = requests.get(url, verify=False, headers=headers, cookies=cookies, proxies=proxies)
-
-
-    # 'http://weibo.com/aj/v6/mblog/info/big?ajwvr=6&id=4152039828718852&page=2&__rnd=1521198014171'
-    # int(time.time() * 1000)
-    # url = 'http://weibo.com/aj/v6/mblog/info/big?ajwvr=6&id=4153642271779497&page=1&__rnd={}'.format(int(time.time() * 1000))
-    # print(url)
-    # '4153642271779497'
 
