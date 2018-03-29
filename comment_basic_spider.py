@@ -7,8 +7,6 @@ from pyquery import PyQuery as Pq
 from pymongo import MongoClient
 from dialogue.dumblog import dlog
 from headers import headers, cookies
-from proxy import Proxy
-from haipproxy.client.py_cli import ProxyFetcher
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 # https://weibo.com/5861369000/FlCRqC4wl?filter=hot&root_comment_id=0&type=comment#_rnd1520924660779
@@ -18,8 +16,6 @@ logger = dlog(__name__, console='debug')
 
 CLIENT = MongoClient('localhost', 27017)
 DB = CLIENT['weibo_marriage']
-args = dict(host='127.0.0.1', port=6379, password='', db=0)
-fetcher = ProxyFetcher('weibo', strategy='greedy', length=5, redis_args=args)
 
 
 class CommentResp(object):
@@ -50,9 +46,7 @@ class CommentResp(object):
         for i in range(2, total_page+1):
             logger.info(i)  # 当前页面
             page_rest_url = self.base_url.format(self.id, self.max_id, i, self.rnd)
-            proxies = Proxy.get_proxy()
-            logger.info(proxies)
-            page_rest_resp = self.session.get(page_rest_url, headers=headers, cookies=cookies, verify=False, proxies=proxies)
+            page_rest_resp = self.session.get(page_rest_url, headers=headers, cookies=cookies, verify=False)
             page_rest_resp_res = json.loads(page_rest_resp.text)
             CommentResp.save(page_rest_resp_res)
 
@@ -104,9 +98,7 @@ class AddUserName(object):
             user_id = record['user_id']
             user_page_url = 'https://weibo.com/u/' + user_id
             logger.info(user_page_url)
-            proxies = {"http": "{}".format(fetcher.get_proxy())}
-            logger.info(proxies)
-            r = requests.get(user_page_url, verify=False, headers=headers, cookies=cookies, proxies=proxies)
+            r = requests.get(user_page_url, verify=False, headers=headers, cookies=cookies)
             r.encoding = 'utf8'  # 解决异常编码
             d = Pq(r.text)
             # print(r.text)
