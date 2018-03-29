@@ -34,13 +34,17 @@ class CommentRecursive(object):
         """
         transmit_url = self.base_url.format(father_mid, page_num, self.rnd)
         logger.info(transmit_url)
-        r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies)
-        logger.info('$$$$$$$')
-        logger.info(r.status_code)
-        logger.info('$$$$$$$')
-        r.encoding = 'utf8'
-        resp_res = json.loads(r.text)
-        return resp_res
+        try:
+            r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies, timeout=4)
+            logger.info(r.status_code)
+            r.encoding = 'utf8'
+            resp_res = json.loads(r.text)
+            return resp_res
+        except TimeoutError as err:
+            exception_url_queue = RedisQueue('exception_url', host='127.0.0.1', port='6379', password='', db=1)
+            exception_url_queue.put(transmit_url)
+            # 异常返回值
+            return -1
 
     def parser(self, father_mid, resp_res, path=None):
         """
@@ -108,16 +112,18 @@ class CommentRecursive(object):
         """
         total_result = []
         resp_page_one = self.requester(father_mid, 1)  # 第一页的原始内容
-        result_page_one = self.parser(father_mid, resp_page_one, path=path)  # 第一页的解析内容
-        total_result.extend(result_page_one)
-        total_page = int(resp_page_one['data']['page']['totalpage'])
-        if total_page > 1:
-            for index in range(2, total_page+1):
-                rest_resp_res = self.requester(father_mid, index)
-                result_page_rest = self.parser(father_mid, rest_resp_res, path=path)
-                total_result.extend(result_page_rest)
-        logger.info(total_result)
-        return total_result
+        if resp_page_one != -1:
+            result_page_one = self.parser(father_mid, resp_page_one, path=path)  # 第一页的解析内容
+            total_result.extend(result_page_one)
+            total_page = int(resp_page_one['data']['page']['totalpage'])
+            if total_page > 1:
+                for index in range(2, total_page+1):
+                    rest_resp_res = self.requester(father_mid, index)
+                    if rest_resp_res != -1:
+                        result_page_rest = self.parser(father_mid, rest_resp_res, path=path)
+                        total_result.extend(result_page_rest)
+            logger.info(total_result)
+            return total_result
 
     @staticmethod
     def save(resp_res):
