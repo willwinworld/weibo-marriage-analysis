@@ -10,6 +10,7 @@ import urllib.parse
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+
 class WeiBoLogin(object):
     """
     class of WeiBoLogin, to login weibo.com
@@ -141,11 +142,24 @@ class WeiBoLogin(object):
         return password.decode()
 
 
-if __name__ == "__main__":
+def execute():
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s\t%(levelname)s\t%(message)s")
     weibo = WeiBoLogin()
-    # weibo.login("账户", "密码")
-    weibo.login('账户', '密码')
+    weibo.login("784514713@qq.com", "infrequent11")  # 这里默认登录是不用手动输入验证码的，所以我用的自己的账号，但如果要输入验证码，调用时就会出问题
+    # weibo.login('13914732671', 'pachong')
     pickle_cookie = weibo.session.cookies.get_dict()
     with open('cookie.json', 'w') as f:
         f.write(json.dumps(pickle_cookie))
+
+
+__all__ = ['execute']
+
+
+# if __name__ == '__main__':
+#     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s\t%(levelname)s\t%(message)s")
+#     weibo = WeiBoLogin()
+#     weibo.login("784514713@qq.com", "infrequent11")  # 这里默认登录是不用手动输入验证码的，所以我用的自己的账号，但如果要输入验证码，调用时就会出问题
+#     # weibo.login('13914732671', 'pachong')
+#     pickle_cookie = weibo.session.cookies.get_dict()
+#     with open('cookie.json', 'w') as f:
+#         f.write(json.dumps(pickle_cookie))

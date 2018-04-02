@@ -1,3 +1,5 @@
+#! python3
+# -*- coding: utf-8 -*-
 import requests
 import json
 import time
@@ -8,6 +10,8 @@ from dialogue.dumblog import dlog
 from headers import headers, cookies
 from decorators import pipe
 from redis_queue import RedisQueue
+from check_cookie import check_cookies_timeout
+from login import execute
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 logger = dlog(__name__, console='debug')
@@ -35,6 +39,9 @@ class CommentRecursive(object):
         transmit_url = self.base_url.format(father_mid, page_num, self.rnd)
         logger.info(transmit_url)
         try:
+            if check_cookies_timeout(cookies):
+                # 如果cookie过期，需要重新登录
+                execute()
             r = requests.get(transmit_url, verify=False, headers=headers, cookies=cookies, timeout=4)
             logger.info(r.status_code)
             r.encoding = 'utf8'

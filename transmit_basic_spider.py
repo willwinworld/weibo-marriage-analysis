@@ -62,7 +62,7 @@ class CommentParser(object):
 
     def parse_resp(self):
         collection = DB['transmit_response']
-        print(collection.count())
+        logger.info(collection.count())
         document_length = collection.count()
         for i in range(1, document_length+1):
             logger.info(i)
@@ -107,5 +107,11 @@ class CommentParser(object):
                 # break
             # break
 
+
+if __name__ == '__main__':
+    comment_transmit = CommentTransmit()
+    comment_transmit.send_request()
+    comment_parser = CommentParser()
+    comment_parser.parse_resp()
 
 
